@@ -13,10 +13,7 @@ NUM_CLASSES = 10
 global BATCH_SIZE
 BATCH_SIZE = 64
 
-x_image = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
-images = tf.reshape(x_image, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
-y_ = tf.placeholder(tf.int32,shape=[None],name='labels')
-y_actual = tf.one_hot(y_,depth=NUM_CLASSES)
+
 def model(images):
     
     with tf.name_scope('conv_1') as scope:
@@ -86,19 +83,38 @@ def model(images):
          
     return fc_layer2    
     
-fc_layer2 = model(images)         
-#cross_entropy loss
-cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_actual,
+
+
+def optimize(iterations,IMG_FLAT=IMG_FLAT,\
+                            IMAGE_DIM=IMAGE_DIM,\
+                            IMAGE_DEPTH=IMAGE_DEPTH,\
+                            NUM_CLASSES=NUM_CLASSES):    
+    
+         _Xs_images = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
+         _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
+         _Ys_labels = tf.placeholder(tf.int32,shape=[None],name='labels')
+         _Ys = tf.one_hot(_Ys_labels,depth=NUM_CLASSES)
+         #input the image and get the softmax output         
+         fc_layer2 = model(_Xs)         
+         #cross_entropy loss
+         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=_Ys,
                                                             logits = fc_layer2))
-train_net = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)                                                        
-correct_prediction = tf.equal(tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32),y_actual)
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32)) 
-
-# Add ops to save and restore all the variables.
-saver = tf.train.Saver()
-
-def optimize(iterations):    
+         #optimization                                                   
+         train_net = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
          
+         # predicted output and actual output
+         _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)
+         _y = tf.cast(tf.argmax(_Ys,1),dtype=tf.float32)
+         #finding the accuracy         
+         correct_prediction = tf.equal(_y_pred,_y)
+         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+         
+         ### SAVE PARAMETERS
+         saver = tf.train.Saver()
+         save_dir = '/home/jay/Deep Network Structures/Tensorflow/TrainedModels/' #directory name
+
+         if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
          with tf.Session() as sess:
              sess.run(tf.initialize_all_variables())
              start_time = time.time()
@@ -107,13 +123,13 @@ def optimize(iterations):
                  images,labels = get_data(batch=i%4)
                  for j in range(images.shape[0] / BATCH_SIZE + 1):
                      
-                    img = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
-                    L = labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
-                    _,loss = sess.run([train_net,cross_entropy],feed_dict={x_image:img,y_:L})
-                    print loss 
+                    _trainXs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
+                    _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
+                    _,_miniAcc = sess.run([train_net,accuracy],feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs})
                     
-             save_path = saver.save(sess, "/tmp/model.ckpt")
-             print("Model saved in file: %s" % save_path)       
+             saver.save(sess = sess,save_path=save_dir)
+             print("Model stored in file: %s" % save_dir)  
+             
          end_time = time.time()
          
          # Difference between start and end-times.
