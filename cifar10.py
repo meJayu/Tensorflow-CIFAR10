@@ -89,7 +89,7 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
                             IMAGE_DIM=IMAGE_DIM,\
                             IMAGE_DEPTH=IMAGE_DEPTH,\
                             NUM_CLASSES=NUM_CLASSES):    
-    
+         #to feed the network
          _Xs_images = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
          _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
          _Ys_labels = tf.placeholder(tf.int32,shape=[None],name='labels')
@@ -111,21 +111,22 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
          
          ### SAVE PARAMETERS
          saver = tf.train.Saver()
-         save_dir = '/home/jay/Deep Network Structures/Tensorflow/TrainedModels/' #directory name
+         save_dir = '/home/jay/Deep Network Structures/TF/my_test_model' #directory name
 
-         if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+         
          with tf.Session() as sess:
              sess.run(tf.initialize_all_variables())
              start_time = time.time()
              for i in range(iterations):
                  
-                 images,labels = get_data(batch=i%4)
+                 images,labels = get_data(batch=i%4,isTraining=True)
                  for j in range(images.shape[0] / BATCH_SIZE + 1):
                      
                     _trainXs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
                     _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
-                    _,_miniAcc = sess.run([train_net,accuracy],feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs})
+                    
+                    feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs}
+                    _,_miniAcc = sess.run([train_net,accuracy],feed_dict)
                     
              saver.save(sess = sess,save_path=save_dir)
              print("Model stored in file: %s" % save_dir)  
@@ -138,18 +139,62 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
          # Print the time-usage.
          print("Time usage: " + str(timedelta(seconds=int(round(time_dif)))))
 
-def get_data(batch,isTraining=True):
+def inference():
+    """
+    predict on a test set
+    """
+    #to feed the network
+    _Xs_images = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
+    _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
+    _Ys_labels = tf.placeholder(tf.int32,shape=[None],name='labels')
+    _Ys = tf.one_hot(_Ys_labels,depth=NUM_CLASSES)
+    #input the image and get the softmax output         
+    fc_layer2 = model(_Xs)         
+    
+    # predicted output and actual output
+    _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)
+    _y = tf.cast(tf.argmax(_Ys,1),dtype=tf.float32)
+    #finding the accuracy         
+    correct_prediction = tf.equal(_y_pred,_y)
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+         
+    with tf.Session() as session:
+        session.run(tf.initialize_all_variables())
+        saver = tf.train.import_meta_graph('/home/jay/Deep Network Structures/TF/my_test_model.meta')
+        saver.restore(session,'/home/jay/Deep Network Structures/TF/my_test_model')
+        all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        print all_vars
+        #session.run(tf.initialize_all_variables())
+        #ckpt = tf.train.get_checkpoint_state(os.path.dirname('/home/jay/Deep Network Structures/Tensorflow/TrainedModels/'))
+        #if ckpt and ckpt.model_checkpoint_path:
+        #    tf.train.Saver.restore(session, ckpt.model_checkpoint_path)
+        _batch_acc = []
+        images,labels = get_data(isTraining=False)
+        for j in range(images.shape[0] / BATCH_SIZE + 1):
+        
+            _trainXs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
+            _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
+                    
+            feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs}
+            _miniAcc = session.run(accuracy,feed_dict)
+            _batch_acc.append(_miniAcc)        
+        msg = "Accuracy on Test-Set: {0:.1%}"
+        print(msg.format(sum(_batch_acc)/float(len(_batch_acc))))
+    
+def get_data(batch=0,isTraining=True):
 
     ROOT_PATH = "/home/jay/Deep Network Structures/cifar-10-python"
     #for training and testing separately
     if isTraining:
         path = os.path.join(ROOT_PATH,"train_batches/")
+        file_names = [f for f in os.listdir(path)]
+        batch = unpickle(os.path.join(path,file_names[batch]))
+        images,labels = np.array(batch['data'],np.float32),batch['labels']  
     else:
         path = os.path.join(ROOT_PATH,"test_batches/")
-    
-    file_names = [f for f in os.listdir(path)]
-    batch = unpickle(os.path.join(path,file_names[batch]))
-    images,labels = np.array(batch['data'],np.float32),batch['labels']  
+        file_names = [f for f in os.listdir(path)]
+        batch = unpickle(os.path.join(path,file_names[0]))
+        images,labels = np.array(batch['data'],np.float32),batch['labels']
     #normalize the data
     images,labels = prepare_input(data=images,labels=labels)
     
