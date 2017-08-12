@@ -12,7 +12,8 @@ global NUM_CLASSES
 NUM_CLASSES = 10
 global BATCH_SIZE
 BATCH_SIZE = 64
-
+#model stored at
+logs_path = '/home/jay/Deep Network Structures/TF/my_test_model'
 
 def model(images):
     
@@ -24,16 +25,14 @@ def model(images):
                                                                                                        seed=None,
                                                                                                        dtype=tf.float32))
         conv = tf.nn.conv2d(images,conv_weight1,\
-                             strides=[1,1,1,1],\
-                             padding='SAME') 
-        biases = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[16],name='bias1'))
+                                strides=[1,1,1,1],\
+                                padding='SAME') 
+        biases = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[16],name='bias_1'))
         bias = tf.nn.bias_add(conv,biases)        
         conv1 = tf.nn.relu(bias,name=scope)
-        
-        
-    pool1 = tf.nn.max_pool(conv1,ksize=[1,3,3,1],
-                        strides=[1,2,2,1],
-                        name='pool1',padding='SAME')
+        pool1 = tf.nn.max_pool(conv1,ksize=[1,3,3,1],\
+                               strides=[1,2,2,1],\
+                               name='pool_1',padding='SAME')
 
     with tf.name_scope('conv_2') as scope:
         
@@ -45,18 +44,16 @@ def model(images):
         conv = tf.nn.conv2d(pool1,conv_weight2,\
                              strides=[1,1,1,1],\
                              padding='SAME') 
-        biases = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[32],name='bias2'))
+        biases = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[32],name='bias_2'))
         bias = tf.nn.bias_add(conv,biases)        
         conv2 = tf.nn.relu(bias,name=scope)
-        
-        
-    pool2 = tf.nn.max_pool(conv2,ksize=[1,3,3,1],
-                        strides=[1,2,2,1],
-                        name='pool2',padding='SAME') 
+        pool2 = tf.nn.max_pool(conv2,ksize=[1,3,3,1],\
+                             strides=[1,2,2,1],\
+                             name='pool_2',padding='SAME') 
                         
     activations = tf.contrib.layers.flatten(pool2)
 
-    with tf.name_scope('fc1') as scope:
+    with tf.name_scope('fc_1') as scope:
                               
          fc_weight1 = tf.get_variable(name = 'fc_weights1',shape=[2048,64],initializer=tf.contrib.layers.variance_scaling_initializer(factor=2.0,
                                                                                                        mode='FAN_IN',
@@ -65,11 +62,11 @@ def model(images):
                                                                                                        dtype=tf.float32))
         
          fc1 = tf.matmul(activations,fc_weight1) 
-         biases1 = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[64],name='fc1'))
+         biases1 = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[64],name='fc_b1'))
          bias = tf.nn.bias_add(fc1,biases1)        
          fc_layer1 = tf.nn.relu(bias,name=scope)
 
-    with tf.name_scope('fc2') as scope:
+    with tf.name_scope('fc_2') as scope:
          fc_weight2 = tf.get_variable(name = 'fc_weights2',shape=[64,10],initializer=tf.contrib.layers.variance_scaling_initializer(factor=2.0,
                                                                                                        mode='FAN_IN',
                                                                                                        uniform=False,
@@ -77,7 +74,7 @@ def model(images):
                                                                                                        dtype=tf.float32))
         
          fc2 = tf.matmul(fc_layer1,fc_weight2) 
-         biases2 = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[10],name='fc2'))
+         biases2 = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[10],name='fc_b2'))
          bias = tf.nn.bias_add(fc2,biases2)        
          fc_layer2 = tf.nn.relu(bias,name=scope)
          
@@ -88,34 +85,53 @@ def model(images):
 def optimize(iterations,IMG_FLAT=IMG_FLAT,\
                             IMAGE_DIM=IMAGE_DIM,\
                             IMAGE_DEPTH=IMAGE_DEPTH,\
-                            NUM_CLASSES=NUM_CLASSES):    
+                            NUM_CLASSES=NUM_CLASSES):
+                                
          #to feed the network
-         _Xs_images = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
-         _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
-         _Ys_labels = tf.placeholder(tf.int32,shape=[None],name='labels')
-         _Ys = tf.one_hot(_Ys_labels,depth=NUM_CLASSES)
-         #input the image and get the softmax output         
-         fc_layer2 = model(_Xs)         
+         with tf.name_scope('Xs') as scope:
+             _Xs_images = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
+             _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
+         with tf.name_scope('Ys') as scope:    
+             _Ys_labels = tf.placeholder(tf.int32,shape=[None],name='labels')
+             _Ys = tf.one_hot(_Ys_labels,depth=NUM_CLASSES)
+         with tf.name_scope('Model') as scope:
+             #input the image and get the softmax output 
+             fc_layer2 = model(_Xs)            
          #cross_entropy loss
-         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=_Ys,
+         with tf.name_scope('cross_entropy_loss') as scope:
+             cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=_Ys,
                                                             logits = fc_layer2))
-         #optimization                                                   
-         train_net = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
-         
-         # predicted output and actual output
-         _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)
+         #optimization   
+         with tf.name_scope('Optimization') as scope:                                                   
+             train_net = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+         #prediction    
+         with tf.name_scope('y_pred') as scope:
+             _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)
+             
          _y = tf.cast(tf.argmax(_Ys,1),dtype=tf.float32)
          #finding the accuracy         
          correct_prediction = tf.equal(_y_pred,_y)
          accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
          
+         # Create a summary to monitor cost tensor
+         tf.summary.scalar("loss", cross_entropy)
+         # Create a summary to monitor accuracy tensor
+         tf.summary.scalar("accuracy", accuracy)
+         # Merge all summaries into a single op
+         _op_summery = tf.summary.merge_all()
+         
+         
          ### SAVE PARAMETERS
          saver = tf.train.Saver()
-         save_dir = '/home/jay/Deep Network Structures/TF/my_test_model' #directory name
+         save_dir = logs_path #directory name
 
          
          with tf.Session() as sess:
              sess.run(tf.initialize_all_variables())
+             
+             # op to write logs to Tensorboard
+             summary_writer = tf.summary.FileWriter(logs_path, graph=tf.get_default_graph())
+
              start_time = time.time()
              for i in range(iterations):
                  
@@ -126,7 +142,10 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
                     _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
                     
                     feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs}
-                    _,_miniAcc = sess.run([train_net,accuracy],feed_dict)
+                    _,loss,summery = sess.run([train_net,cross_entropy,_op_summery],feed_dict)
+                    #to add summery on every iterations
+                    print loss
+                    summary_writer.add_summary(summery,i)
                     
              saver.save(sess = sess,save_path=save_dir)
              print("Model stored in file: %s" % save_dir)  
