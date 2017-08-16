@@ -13,9 +13,15 @@ NUM_CLASSES = 10
 global BATCH_SIZE
 BATCH_SIZE = 64
 #model stored at
-logs_path = '/home/jay/Deep Network Structures/TF/my_test_model'
+save_path = '/home/jay/Deep_Structures/TF/my_test_model'
+#log_dir
+log_dir = '/home/jay/Deep_Structures/Summary/'
 
-def model(images):
+def model(_Xs_images,_Ys_labels,keep_prob):
+    
+    with tf.name_scope('reshape'):    
+        _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH]) 
+        _Ys = tf.one_hot(_Ys_labels,depth=NUM_CLASSES)
     
     with tf.name_scope('conv_1') as scope:
         
@@ -24,7 +30,7 @@ def model(images):
                                                                                                        uniform=False,
                                                                                                        seed=None,
                                                                                                        dtype=tf.float32))
-        conv = tf.nn.conv2d(images,conv_weight1,\
+        conv = tf.nn.conv2d(_Xs,conv_weight1,\
                                 strides=[1,1,1,1],\
                                 padding='SAME') 
         biases = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[16],name='bias_1'))
@@ -65,6 +71,11 @@ def model(images):
          biases1 = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[64],name='fc_b1'))
          bias = tf.nn.bias_add(fc1,biases1)        
          fc_layer1 = tf.nn.relu(bias,name=scope)
+         
+    with tf.name_scope('dropout'):
+        
+        tf.summary.scalar('dropout_keep_probability', keep_prob)
+        fc_layer1_dropped = tf.nn.dropout(fc_layer1, keep_prob)
 
     with tf.name_scope('fc_2') as scope:
          fc_weight2 = tf.get_variable(name = 'fc_weights2',shape=[64,10],initializer=tf.contrib.layers.variance_scaling_initializer(factor=2.0,
@@ -73,80 +84,108 @@ def model(images):
                                                                                                        seed=None,
                                                                                                        dtype=tf.float32))
         
-         fc2 = tf.matmul(fc_layer1,fc_weight2) 
+         fc2 = tf.matmul(fc_layer1_dropped,fc_weight2) 
          biases2 = tf.Variable(tf.constant(0.01,dtype=tf.float32,shape=[10],name='fc_b2'))
          bias = tf.nn.bias_add(fc2,biases2)        
          fc_layer2 = tf.nn.relu(bias,name=scope)
-         
-    return fc_layer2    
+    
+    
+    #cross_entropy loss
+    with tf.name_scope('cross_entropy_loss'):
+         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=_Ys,
+                                                            logits = fc_layer2))
+    
+    #prediction    
+    with tf.name_scope('y_pred'):
+        _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)     
+    
+    return _y_pred,cross_entropy,_Ys   
     
 
 
 def optimize(iterations,IMG_FLAT=IMG_FLAT,\
                             IMAGE_DIM=IMAGE_DIM,\
                             IMAGE_DEPTH=IMAGE_DEPTH,\
-                            NUM_CLASSES=NUM_CLASSES):
-                                
+                            NUM_CLASSES=NUM_CLASSES,k=1):
+         sess = tf.InteractiveSession()                       
          #to feed the network
-         with tf.name_scope('Xs') as scope:
+         with tf.name_scope('Xs'):
              _Xs_images = tf.placeholder(tf.float32,shape=[None,IMG_FLAT],name='images')
-             _Xs = tf.reshape(_Xs_images, shape=[-1, IMAGE_DIM,IMAGE_DIM,IMAGE_DEPTH])
-         with tf.name_scope('Ys') as scope:    
+            
+         with tf.name_scope('Ys'):    
              _Ys_labels = tf.placeholder(tf.int32,shape=[None],name='labels')
-             _Ys = tf.one_hot(_Ys_labels,depth=NUM_CLASSES)
-         with tf.name_scope('Model') as scope:
-             #input the image and get the softmax output 
-             fc_layer2 = model(_Xs)            
-         #cross_entropy loss
-         with tf.name_scope('cross_entropy_loss') as scope:
-             cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=_Ys,
-                                                            logits = fc_layer2))
-         #optimization   
-         with tf.name_scope('Optimization') as scope:                                                   
-             train_net = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
-         #prediction    
-         with tf.name_scope('y_pred') as scope:
-             _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)
              
-         _y = tf.cast(tf.argmax(_Ys,1),dtype=tf.float32)
-         #finding the accuracy         
-         correct_prediction = tf.equal(_y_pred,_y)
-         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+         keep_prob = tf.placeholder(tf.float32)    
+
+         with tf.name_scope('Model'):
+             #input the image and get the softmax output 
+             _y_pred,cross_entropy,_Ys = model(_Xs_images,_Ys_labels,keep_prob)            
          
+         #optimization   
+         with tf.name_scope('Optimization'):                                                   
+             train_net = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy) 
+         
+         with tf.name_scope('Accuracy'):
+             _y = tf.cast(tf.argmax(_Ys,1),dtype=tf.float32)
+             with tf.name_scope('Correct_prediction'):
+                 #finding the accuracy         
+                 correct_prediction = tf.equal(_y_pred,_y)
+             with tf.name_scope('Accuracy'):
+                 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+         
+         tf.summary.scalar('accuracy', accuracy)
          # Create a summary to monitor cost tensor
          tf.summary.scalar("loss", cross_entropy)
          # Create a summary to monitor accuracy tensor
-         tf.summary.scalar("accuracy", accuracy)
-         # Merge all summaries into a single op
-         _op_summery = tf.summary.merge_all()
+         _op_summary =tf.summary.merge_all()
          
          
          ### SAVE PARAMETERS
          saver = tf.train.Saver()
-         save_dir = logs_path #directory name
+         save_dir = save_path #directory name
 
          
-         with tf.Session() as sess:
+         if True:
+             summary_writer = tf.summary.FileWriter(log_dir + '/train', sess.graph)
              sess.run(tf.initialize_all_variables())
              
-             # op to write logs to Tensorboard
-             summary_writer = tf.summary.FileWriter(logs_path, graph=tf.get_default_graph())
-
+             
              start_time = time.time()
-             for i in range(iterations):
+             for i in range(1,iterations):
                  
                  images,labels = get_data(batch=i%4,isTraining=True)
+                 
                  for j in range(images.shape[0] / BATCH_SIZE + 1):
-                     
-                    _trainXs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
-                    _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
+                     if k%5 == 0:
+                         _trainXs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
+                         _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
                     
-                    feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs}
-                    _,loss,summery = sess.run([train_net,cross_entropy,_op_summery],feed_dict)
-                    #to add summery on every iterations
-                    print loss
-                    summary_writer.add_summary(summery,i)
+                         feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs,keep_prob:0.5}
                     
+                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+                         run_metadata = tf.RunMetadata()
+                    
+                         summary,_,loss= sess.run([_op_summary,train_net,cross_entropy],feed_dict,\
+                                                        options=run_options,\
+                                                        run_metadata=run_metadata)
+                         summary_writer.add_run_metadata(run_metadata, 'step%d' % k)
+                         summary_writer.add_summary(summary, k)
+                         print('Adding run metadata for', k)
+                         k += 1
+                     else:#training mini-batch
+                         
+                         _trainXs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:]
+                         _trainYs= labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
+                    
+                         feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs,keep_prob:0.5}
+                    
+                         summary,_,loss= sess.run([_op_summary,train_net,cross_entropy],feed_dict) 
+                         print loss                            
+                         summary_writer.add_summary(summary, k)
+                         k += 1
+             
+             summary_writer.close()       
+
              saver.save(sess = sess,save_path=save_dir)
              print("Model stored in file: %s" % save_dir)  
              
@@ -179,8 +218,8 @@ def inference():
          
     with tf.Session() as session:
         session.run(tf.initialize_all_variables())
-        saver = tf.train.import_meta_graph('/home/jay/Deep Network Structures/TF/my_test_model.meta')
-        saver.restore(session,'/home/jay/Deep Network Structures/TF/my_test_model')
+        saver = tf.train.import_meta_graph('/home/jay/Deep_Structures/TF/my_test_model.meta')
+        saver.restore(session,'/home/jay/Deep_Structures/TF/my_test_model')
         all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
         print all_vars
         #session.run(tf.initialize_all_variables())
@@ -202,7 +241,7 @@ def inference():
     
 def get_data(batch=0,isTraining=True):
 
-    ROOT_PATH = "/home/jay/Deep Network Structures/cifar-10-python"
+    ROOT_PATH = "/home/jay/Deep_Structures/cifar-10-python"
     #for training and testing separately
     if isTraining:
         path = os.path.join(ROOT_PATH,"train_batches/")
