@@ -80,13 +80,16 @@ def model(_Xs_images,_Ys_labels,keep_prob,weights={}):
          bias = tf.nn.bias_add(fc1,biases1)        
          fc_layer1 = tf.nn.relu(bias,name='ReLU_fc_1')
          weight_summaries(weights['fc_weights1'])
-         
-         
+    
+    embedding_input = fc_layer1     
+    embedding = tf.Variable(tf.zeros([64, 64]), name="test_embedding")
+    assignment = embedding.assign(embedding_input)  
+    
     with tf.name_scope('dropout'):
         
         tf.summary.scalar('dropout_keep_probability', keep_prob)
         fc_layer1_dropped = tf.nn.dropout(fc_layer1, keep_prob)
-
+    
     with tf.name_scope('fc_2'):
          fc_weight2 = tf.get_variable(name = 'fc_weights2',shape=[64,10],initializer=tf.contrib.layers.variance_scaling_initializer(factor=2.0,
                                                                                                        mode='FAN_IN',
@@ -115,7 +118,7 @@ def model(_Xs_images,_Ys_labels,keep_prob,weights={}):
     with tf.name_scope('y_Predicted'):
         _y_pred = tf.cast(tf.argmax(fc_layer2,1),dtype=tf.float32)     
     
-    return _y_pred,cross_entropy,_Ys   
+    return _y_pred,cross_entropy,_Ys,embedding,assignment   
     
 def weight_summaries(var):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
@@ -148,7 +151,7 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
 
              with tf.name_scope('Model'):
                  #input the image and get the softmax output 
-                 _y_pred,cross_entropy,_Ys = model(_Xs_images,_Ys_labels,keep_prob)            
+                 _y_pred,cross_entropy,_Ys,embedding,assignment = model(_Xs_images,_Ys_labels,keep_prob)            
          
              #optimization   
              with tf.name_scope('Optimization'):                                                   
@@ -171,15 +174,19 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
          
              ### SAVE PARAMETERS
              saver = tf.train.Saver()
-             save_dir = save_path #directory name
-
-         
+                      
              with tf.Session() as sess:
                  _train_summery_writer = tf.summary.FileWriter(log_dir + '/train', sess.graph)
                  _test_summery_writer = tf.summary.FileWriter(log_dir + '/test', sess.graph)
                  
                  sess.run(tf.initialize_all_variables())
-             
+                 #for visualizations
+                 config = tf.contrib.tensorboard.plugins.projector.ProjectorConfig()
+                 embedding_config = config.embeddings.add()
+                 embedding_config.tensor_name = embedding.name
+                 
+                 tf.contrib.tensorboard.plugins.projector.visualize_embeddings(_test_summery_writer, config)
+
              
                  start_time = time.time()
                  for i in range(iterations):
@@ -202,7 +209,7 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
                          for j in range(images.shape[0] / BATCH_SIZE + 1):
                             #preparing inputs
                             _trainXs,_trainYs = images[j*BATCH_SIZE:(j+1)*BATCH_SIZE,:],labels[j*BATCH_SIZE:(j+1)*BATCH_SIZE]
-                            feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs,keep_prob:0.5}
+                            feed_dict={_Xs_images:_trainXs,_Ys_labels:_trainYs,keep_prob:1.0}
                             #training/backprop
                             _test_summary,_mini_batch_acc,loss= sess.run([_op_summary,accuracy,cross_entropy],feed_dict) 
                             _test_accuracy +=  _mini_batch_acc / float(images.shape[0] / BATCH_SIZE + 1)                          
@@ -210,12 +217,13 @@ def optimize(iterations,IMG_FLAT=IMG_FLAT,\
                             _test_count += 1
                          msg = "Accuracy on Test-Set After Epoch {0} : {1:.1%}"
                          print(msg.format(i/NUM_BATCHES,_test_accuracy))
+                         saver.save(sess, os.path.join(log_dir+'/test', "model.ckpt"), i/NUM_BATCHES)
                          
                  _train_summery_writer.close()       
                  _test_summery_writer.close()
                  
-                 saver.save(sess = sess,save_path=save_dir)
-                 print("Model stored in file: %s" % save_dir)  
+                 
+                 print("Model stored in file: %s" % log_dir+'/test')  
                  #to moniter the time                 
                  end_time = time.time()
                  time_dif = end_time - start_time
